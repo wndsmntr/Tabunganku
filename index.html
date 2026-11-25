@@ -47,11 +47,27 @@ input{width:100%;padding:13px;border:1px solid var(--line);border-radius:10px;ba
 .login{margin-top:8vh}.login h2{font-size:28px;font-weight:800;letter-spacing:-.5px;margin:0 0 6px}
 .warn{font-size:13px;color:var(--mute);margin-top:18px}
 button:focus-visible,input:focus-visible{outline:3px solid var(--sun);outline-offset:2px}
+#report{display:none}
+@media print{
+ @page{margin:16mm}
+ body>*:not(#report){display:none!important}
+ body{background:#fff!important;color:#000!important;padding:0!important}
+ #report{display:block;font:14px/1.5 system-ui,sans-serif;color:#000;background:#fff}
+ #report h2{font-size:22px;margin:0 0 2px}#report .meta{color:#555;margin:0 0 16px}
+ #report table{width:100%;border-collapse:collapse}
+ #report th,#report td{padding:7px 6px;border-bottom:1px solid #ccc;text-align:left}
+ #report th{border-bottom:2px solid #000}#report .r{text-align:right}
+ #report .tot td{font-weight:700;border-top:2px solid #000;border-bottom:0}
+ #report .box{display:flex;gap:24px;margin:0 0 16px}#report .box div{flex:1;border:1px solid #ccc;padding:8px 10px}
+ #report .box b{display:block;font-size:18px}
+ tr{page-break-inside:avoid}
+}
 </style>
 </head>
 <body>
 <main id="app"></main>
 <div id="modal"></div>
+<div id="report"></div>
 <script>
 // ====== ISI DUA BARIS INI (dari Supabase > Project Settings > API) ======
 const CFG={url:"https://gjsywyhksrispbdoznrx.supabase.co",key:"sb_publishable_I4ka_RotC90HmgUaK3LLEw_qkdANdSO"};
@@ -97,6 +113,7 @@ function render(){
   const fab=document.getElementById("fab");if(fab)fab.onclick=()=>m?txSheet(m):memberSheet();
   const ex=document.getElementById("export");if(ex)ex.onclick=exportCsv;
   const cp=document.getElementById("chpw");if(cp)cp.onclick=pwSheet;
+  const pf=document.getElementById("pdf");if(pf)pf.onclick=()=>printReport(role==="member"?me:m);
   const rs=document.getElementById("reset");if(rs)rs.onclick=()=>pinSheet(m);
   const dm=document.getElementById("delm");if(dm)dm.onclick=()=>delMember(m);
   app.querySelectorAll("[data-del]").forEach(b=>b.onclick=()=>delTx(b.dataset.del));
@@ -127,14 +144,14 @@ function home(){
   const total=members.reduce((s,m)=>s+saldo(m),0);
   const rows=members.map(m=>`<button class="row" data-m="${m.id}"><div class="av">${esc((m.name||"?")[0]).toUpperCase()}</div><div class="grow"><div class="nm">${esc(m.name)}</div><div class="note">${m.txs.length} transaksi</div></div><div class="bal">${rp(saldo(m))}</div></button>`).join("");
   return `<h1>Total tabungan semua anggota</h1><p class="total">${rp(total)}</p><p class="sub">${members.length} anggota</p>
-  <div class="bar"><button class="chip" id="export">Unduh CSV</button><button class="chip" id="chpw">Ganti password</button></div>
+  <div class="bar"><button class="chip" id="pdf">Laporan PDF</button><button class="chip" id="export">Unduh CSV</button><button class="chip" id="chpw">Ganti password</button></div>
   <div class="list">${rows||`<div class="empty">Belum ada anggota. Ketuk “Tambah anggota” untuk mulai.</div>`}</div>`;
 }
 function detail(m,adm){
   const list=m.txs||[];
   const inn=list.filter(t=>t.type==="in").reduce((s,t)=>s+t.amount,0),out=list.filter(t=>t.type==="out").reduce((s,t)=>s+t.amount,0);
   return `<div class="hero"><div style="opacity:.8;font-size:14px">${esc(m.name)}</div><p class="total">${rp(inn-out)}</p><div style="opacity:.8;font-size:13px">Setoran ${rp(inn)} · Penarikan ${rp(out)}</div></div>
-  ${adm?`<div class="bar"><button class="chip" id="reset">Atur ulang PIN</button><button class="chip" id="delm">Hapus anggota</button></div>`:""}
+  <div class="bar">${adm?`<button class="chip" id="reset">Atur ulang PIN</button><button class="chip" id="delm">Hapus anggota</button>`:""}<button class="chip" id="pdf">Laporan PDF</button></div>
   ${list.length?list.map(t=>`<div class="tx"><div><div class="${t.type}" style="font-weight:600">${t.type==="in"?"Setoran":"Penarikan"}</div><div class="note">${fdate(t.date)}${t.note?" · "+esc(t.note):""}</div></div><div style="text-align:right"><div class="bal ${t.type}">${t.type==="in"?"+":"−"}${rp(t.amount)}</div>${adm?`<button class="del" data-del="${t.id}">Hapus</button>`:""}</div></div>`).join(""):`<div class="empty">Belum ada transaksi.</div>`}`;
 }
 function close(){modal.innerHTML=""}
@@ -159,6 +176,30 @@ function memberSheet(){
     act(ok,"admin_add_member",{p_admin:secret,p_name:name,p_pin:p});
   };
   document.getElementById("nm").focus();
+}
+function printReport(m){
+  const d=new Date().toLocaleDateString("id-ID",{day:"numeric",month:"long",year:"numeric"});
+  const sum=x=>{const l=x.txs||[];return{i:l.filter(t=>t.type==="in").reduce((a,t)=>a+t.amount,0),o:l.filter(t=>t.type==="out").reduce((a,t)=>a+t.amount,0)}};
+  let h,title;
+  if(m){
+    const t=sum(m);let run=0;
+    const rows=(m.txs||[]).slice().reverse().map(x=>{run+=x.type==="in"?x.amount:-x.amount;return `<tr><td>${fdate(x.date)}</td><td>${x.type==="in"?"Setoran":"Penarikan"}</td><td>${esc(x.note||"")}</td><td class="r">${x.type==="in"?"":"−"}${rp(x.amount)}</td><td class="r">${rp(run)}</td></tr>`}).join("");
+    title="Laporan Tabungan - "+m.name;
+    h=`<h2>Laporan Tabungan</h2><p class="meta">${esc(m.name)} · dicetak ${d}</p>
+    <div class="box"><div>Total setoran<b>${rp(t.i)}</b></div><div>Total penarikan<b>${rp(t.o)}</b></div><div>Saldo<b>${rp(t.i-t.o)}</b></div></div>
+    <table><tr><th>Tanggal</th><th>Jenis</th><th>Catatan</th><th class="r">Jumlah</th><th class="r">Saldo</th></tr>${rows||`<tr><td colspan="5">Belum ada transaksi.</td></tr>`}</table>`;
+  }else{
+    let ti=0,to=0;
+    const rows=members.map(x=>{const t=sum(x);ti+=t.i;to+=t.o;return `<tr><td>${esc(x.name)}</td><td class="r">${rp(t.i)}</td><td class="r">${rp(t.o)}</td><td class="r">${rp(t.i-t.o)}</td></tr>`}).join("");
+    title="Laporan Tabungan Bersama";
+    h=`<h2>Laporan Tabungan Bersama</h2><p class="meta">${members.length} anggota · dicetak ${d}</p>
+    <table><tr><th>Anggota</th><th class="r">Setoran</th><th class="r">Penarikan</th><th class="r">Saldo</th></tr>${rows||`<tr><td colspan="4">Belum ada anggota.</td></tr>`}
+    <tr class="tot"><td>Total</td><td class="r">${rp(ti)}</td><td class="r">${rp(to)}</td><td class="r">${rp(ti-to)}</td></tr></table>`;
+  }
+  document.getElementById("report").innerHTML=h;
+  const old=document.title;document.title=title;
+  window.onafterprint=()=>{document.title=old;document.getElementById("report").innerHTML=""};
+  window.print();
 }
 function pwSheet(){
   sheet(`<h2>Ganti password admin</h2><label for="o">Password saat ini</label><input id="o" type="password" autocomplete="current-password">

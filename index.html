@@ -4,6 +4,12 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="theme-color" content="#ffffff">
+<link rel="manifest" href="manifest.json">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Tabungan">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
 <title>Tabungan Bersama</title>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap">
 <style>
@@ -82,7 +88,7 @@ const esc=s=>String(s??"").replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&g
 const fdate=d=>new Date(d+"T00:00:00").toLocaleDateString("id-ID",{day:"numeric",month:"short",year:"numeric"});
 const today=()=>{const d=new Date();return new Date(d.getTime()-d.getTimezoneOffset()*60000).toISOString().slice(0,10)};
 const saldo=m=>(m.txs||[]).reduce((s,t)=>s+(t.type==="in"?t.amount:-t.amount),0);
-const MSG={auth:"Password admin salah, atau terlalu banyak percobaan. Tunggu beberapa menit.",pin_taken:"PIN ini sudah dipakai anggota lain. Pilih PIN lain.",pin_format:"PIN harus 6 angka.",saldo:"Penarikan melebihi saldo.",pw_short:"Password baru minimal 8 karakter.",name:"Isi nama anggota.",input:"Data tidak valid."};
+const MSG={auth:"Password admin salah, atau terlalu banyak percobaan. Tunggu beberapa menit.",pin_taken:"PIN ini sudah dipakai anggota lain. Pilih PIN lain.",pin_format:"PIN harus 6 angka.",saldo:"Penarikan melebihi saldo.",pw_short:"Password baru minimal 8 karakter.",same:"PIN baru harus berbeda dari PIN lama.",name:"Isi nama anggota.",input:"Data tidak valid."};
 const app=document.getElementById("app"),modal=document.getElementById("modal");
 let role=null,secret=null,members=[],me=null,sel=null,tab=null,loginAdmin=false,loading=false;
 
@@ -118,7 +124,7 @@ function view(m){
     const list=me.txs||[];
     if(tab==="saldo")return `<h1>Tabungan Anda</h1>${hero(me)}<div class="sec">Transaksi terakhir</div>${list.slice(0,4).map(x=>txRow(x,false)).join("")||empty}`;
     if(tab==="riwayat")return `<h1>Riwayat transaksi</h1><p class="sub">${list.length} transaksi</p>${list.map(x=>txRow(x,false)).join("")||empty}`;
-    return `<h1>Akun</h1><p class="sub">${esc(me.name)}</p><div class="list">${menu("pdf","Laporan PDF","Unduh riwayat tabungan Anda")}${menu("rf","Segarkan data")}${menu("out","Keluar")}</div>`;
+    return `<h1>Akun</h1><p class="sub">${esc(me.name)}</p><div class="list">${menu("pdf","Laporan PDF","Unduh riwayat tabungan Anda")}${menu("pin","Ganti PIN","Buat PIN baru yang hanya Anda yang tahu")}${installRow()}${menu("rf","Segarkan data")}${menu("out","Keluar")}</div>`;
   }
   if(tab==="beranda"){
     let ti=0,to=0;const recent=[];
@@ -133,7 +139,7 @@ function view(m){
     const rows=members.map(x=>`<button class="row" data-m="${x.id}"><div class="av">${esc((x.name||"?")[0]).toUpperCase()}</div><div class="grow"><div class="nm">${esc(x.name)}</div><div class="note">${x.txs.length} transaksi</div></div><div class="bal">${rp(saldo(x))}</div></button>`).join("");
     return `<h1>Anggota</h1><p class="sub">${members.length} orang</p><div class="list">${rows||`<div class="empty">Belum ada anggota. Ketuk “Tambah anggota” untuk mulai.</div>`}</div>`;
   }
-  return `<h1>Laporan dan pengaturan</h1><p class="sub">Masuk sebagai admin</p><div class="list">${menu("pdf","Laporan PDF","Ringkasan semua anggota")}${menu("export","Unduh CSV","Semua transaksi")}${menu("chpw","Ganti password admin")}${menu("rf","Segarkan data")}${menu("out","Keluar")}</div>`;
+  return `<h1>Laporan dan pengaturan</h1><p class="sub">Masuk sebagai admin</p><div class="list">${menu("pdf","Laporan PDF","Ringkasan semua anggota")}${menu("export","Unduh CSV","Semua transaksi")}${menu("chpw","Ganti password admin")}${installRow()}${menu("rf","Segarkan data")}${menu("out","Keluar")}</div>`;
 }
 function render(){
   if(CFG.url.includes("GANTI")||CFG.key.includes("GANTI")){app.innerHTML=`<div class="empty">Aplikasi belum dihubungkan ke database.<br>Isi <b>CFG.url</b> dan <b>CFG.key</b> di file index.html.</div>`;return}
@@ -150,7 +156,7 @@ function render(){
   app.querySelectorAll("[data-del]").forEach(b=>b.onclick=()=>delTx(b.dataset.del));
   on("back",()=>{sel=null;render()});
   on("fab",()=>showM?txSheet(showM):memberSheet());
-  on("out",logout);on("rf",refresh);on("export",exportCsv);on("chpw",pwSheet);
+  on("out",logout);on("rf",refresh);on("export",exportCsv);on("chpw",pwSheet);on("inst",installApp);on("pin",pinSelfSheet);
   on("pdf",()=>printReport(role==="member"?me:showM));
   on("reset",()=>pinSheet(showM));on("delm",()=>delMember(showM));
 }
@@ -168,6 +174,7 @@ function loginView(){
    <li><svg viewBox="0 0 24 24"><path d="M12 3l8 3v6c0 5-3.5 8-8 9-4.5-1-8-4-8-9V6z"/></svg><span>Percobaan masuk dibatasi untuk mencegah tebakan PIN.</span></li>
   </ul>
   <p class="warn">${loginAdmin?"":"Lupa PIN? Minta admin mengatur ulang."}</p>
+  ${isStandalone()?"":`<button class="btn ghost" id="inst" style="margin-top:10px">Pasang di layar utama</button>`}
   <p class="foot">Koneksi terenkripsi (HTTPS)</p></div>`;
   const er=document.getElementById("er"),go=document.getElementById("go"),inp=document.getElementById("p");
   const run=async()=>{
@@ -182,6 +189,7 @@ function loginView(){
   };
   go.onclick=run;inp.onkeydown=e=>{if(e.key==="Enter")run()};
   document.getElementById("sw").onclick=()=>{loginAdmin=!loginAdmin;loginView()};
+  const ib=document.getElementById("inst");if(ib)ib.onclick=installApp;
   inp.focus();
 }
 function hero(m){
@@ -242,6 +250,41 @@ function printReport(m){
     doc.autoTable({startY:95,head:[["Anggota","Setoran","Penarikan","Saldo"]],body:body.length?body:[[{content:"Belum ada anggota.",colSpan:4}]],foot:[["Total",rp(ti),rp(to),rp(ti-to)]],styles:{fontSize:10},headStyles:hs,footStyles:{fillColor:[235,235,235],textColor:0},columnStyles:{1:{halign:"right"},2:{halign:"right"},3:{halign:"right"}}});
   }
   doc.save(title.replace(/[^\w-]+/g,"-")+"-"+today()+".pdf");
+}
+const isStandalone=()=>matchMedia("(display-mode: standalone)").matches||navigator.standalone===true;
+const installRow=()=>isStandalone()?"":menu("inst","Pasang di layar utama","Buka seperti aplikasi, tanpa mengingat tautan");
+let deferredInstall=null;
+addEventListener("beforeinstallprompt",e=>{e.preventDefault();deferredInstall=e});
+addEventListener("appinstalled",()=>{deferredInstall=null;if(role)render();else loginView()});
+async function installApp(){
+  if(deferredInstall){deferredInstall.prompt();try{await deferredInstall.userChoice}catch(e){}deferredInstall=null;return}
+  const ios=/iphone|ipad|ipod/i.test(navigator.userAgent);
+  sheet(`<h2>Pasang di layar utama</h2>
+  <p class="sub" style="margin-bottom:10px">${ios?"Di iPhone atau iPad, buka halaman ini dengan <b>Safari</b>, lalu:":"Di HP Android, gunakan Chrome, lalu:"}</p>
+  <ol style="padding-left:20px;margin:0;line-height:1.8">${ios
+   ?"<li>Ketuk tombol <b>Bagikan</b> (kotak dengan panah ke atas).</li><li>Pilih <b>Tambah ke Layar Utama</b>.</li><li>Ketuk <b>Tambah</b>.</li>"
+   :"<li>Ketuk menu <b>⋮</b> di pojok kanan atas.</li><li>Pilih <b>Instal aplikasi</b> atau <b>Tambahkan ke layar utama</b>.</li><li>Ketuk <b>Instal</b>.</li>"}</ol>
+  <button class="btn" id="cx">Mengerti</button>`);
+}
+function pinSelfSheet(){
+  sheet(`<h2>Ganti PIN</h2><p class="sub" style="margin-bottom:0">Pilih PIN 6 angka yang hanya Anda yang tahu. Jangan beri tahu siapa pun, termasuk admin.</p>
+  <label for="n">PIN baru</label><input id="n" type="password" inputmode="numeric" maxlength="6" autocomplete="new-password">
+  <label for="n2">Ulangi PIN baru</label><input id="n2" type="password" inputmode="numeric" maxlength="6" autocomplete="new-password">
+  <div class="err" id="er"></div><button class="btn" id="ok">Simpan PIN</button><button class="btn ghost" id="cx">Batal</button>`);
+  const ok=document.getElementById("ok"),er=document.getElementById("er");
+  ok.onclick=async()=>{
+    const n=document.getElementById("n").value.trim(),n2=document.getElementById("n2").value.trim();
+    if(!/^\d{6}$/.test(n)){er.textContent=MSG.pin_format;return}
+    if(n!==n2){er.textContent="PIN baru dan pengulangannya tidak sama.";return}
+    ok.disabled=true;er.textContent="";
+    try{
+      const r=await rpc("member_change_pin",{p_pin:secret,p_new:n});
+      if(r.ok){secret=n;saveSess();close();alert("PIN Anda sudah diganti. Gunakan PIN baru saat masuk berikutnya.")}
+      else if(r.error==="bad"||r.error==="locked"){close();logout()}
+      else{er.textContent=r.error==="pin_taken"?"PIN ini tidak bisa dipakai. Pilih PIN lain.":(MSG[r.error]||"Gagal menyimpan.");ok.disabled=false}
+    }catch(e){er.textContent="Tidak bisa terhubung. Coba lagi.";ok.disabled=false}
+  };
+  document.getElementById("n").focus();
 }
 function pwSheet(){
   sheet(`<h2>Ganti password admin</h2><label for="o">Password saat ini</label><input id="o" type="password" autocomplete="current-password">
@@ -308,6 +351,7 @@ function exportCsv(){
   const csv="\ufeffTanggal,Anggota,Jenis,Jumlah,Catatan\n"+rows.map(r=>r.join(",")).join("\n");
   const a=document.createElement("a");a.href=URL.createObjectURL(new Blob([csv],{type:"text/csv"}));a.download="tabungan-"+today()+".csv";document.body.appendChild(a);a.click();a.remove();
 }
+if("serviceWorker" in navigator)addEventListener("load",()=>navigator.serviceWorker.register("sw.js").catch(()=>{}));
 (async()=>{
   render();
   if(CFG.url.includes("GANTI"))return;

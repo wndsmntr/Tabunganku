@@ -297,6 +297,21 @@ function printReport(m){
   }
   doc.save((title+(filtered?" "+periodLabel():"")).replace(/[^\w-]+/g,"-")+"-"+today()+".pdf");
 }
+const isStandalone=()=>matchMedia("(display-mode: standalone)").matches||navigator.standalone===true;
+const installRow=()=>isStandalone()?"":menu("inst","Pasang di layar utama","Buka seperti aplikasi, tanpa mengingat tautan");
+let deferredInstall=null;
+addEventListener("beforeinstallprompt",e=>{e.preventDefault();deferredInstall=e});
+addEventListener("appinstalled",()=>{deferredInstall=null;if(role)render();else loginView()});
+async function installApp(){
+  if(deferredInstall){deferredInstall.prompt();try{await deferredInstall.userChoice}catch(e){}deferredInstall=null;return}
+  const ios=/iphone|ipad|ipod/i.test(navigator.userAgent);
+  sheet(`<h2>Pasang di layar utama</h2>
+  <p class="sub" style="margin-bottom:10px">${ios?"Di iPhone atau iPad, buka halaman ini dengan <b>Safari</b>, lalu:":"Di HP Android, gunakan Chrome, lalu:"}</p>
+  <ol style="padding-left:20px;margin:0;line-height:1.8">${ios
+   ?"<li>Ketuk tombol <b>Bagikan</b> (kotak dengan panah ke atas).</li><li>Pilih <b>Tambah ke Layar Utama</b>.</li><li>Ketuk <b>Tambah</b>.</li>"
+   :"<li>Ketuk menu <b>⋮</b> di pojok kanan atas.</li><li>Pilih <b>Instal aplikasi</b> atau <b>Tambahkan ke layar utama</b>.</li><li>Ketuk <b>Instal</b>.</li>"}</ol>
+  <button class="btn" id="cx">Mengerti</button>`);
+}
 function pinSelfSheet(){
   sheet(`<h2>Ganti PIN</h2><p class="sub" style="margin-bottom:0">Pilih PIN 6 angka yang hanya Anda yang tahu. Jangan beri tahu siapa pun, termasuk admin.</p>
   <label for="n">PIN baru</label><input id="n" type="password" inputmode="numeric" maxlength="6" autocomplete="new-password">

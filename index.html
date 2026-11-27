@@ -179,7 +179,7 @@ function view(m){
     return `<h1>Anggota</h1><p class="sub">${members.length} orang</p>${membersBlock(0)}`;
   }
   if(tab==="laporan")return `<h1>Laporan</h1><p class="sub">Unduh ringkasan tabungan</p><div class="list">${menu("period","Periode laporan",periodLabel())}${menu("pdf","Laporan PDF","Ringkasan semua anggota")}${menu("export","Unduh CSV","Semua transaksi pada periode terpilih")}</div>`;
-  return `<h1>Lainnya</h1><p class="sub">Masuk sebagai admin</p><div class="list">${menu("chpw","Ganti password admin")}${installRow()}${menu("rf","Segarkan data")}${menu("out","Keluar")}</div>`;
+  return `<h1>Lainnya</h1><p class="sub">Masuk sebagai admin</p><div class="list">${menu("bk","Cadangkan data","Simpan semua data ke satu file")}${menu("rs","Pulihkan dari cadangan","Kembalikan data dari file cadangan")}${menu("chpw","Ganti password admin")}${installRow()}${menu("rf","Segarkan data")}${menu("out","Keluar")}</div>`;
 }
 function bindM(){
   app.querySelectorAll("[data-m]").forEach(b=>b.onclick=()=>{sel=b.dataset.m;tab="anggota";scrollTo(0,0);render()});
@@ -205,7 +205,7 @@ function render(){
   on("fab",()=>txSheet(showM));
   on("navfab",()=>pickMemberSheet(null));on("tile-in",()=>pickMemberSheet("in"));on("tile-out",()=>pickMemberSheet("out"));on("tile-new",memberSheet);
   on("eye",()=>{hide=!hide;render()});on("go-r",()=>{tab="riwayat";scrollTo(0,0);render()});on("go-r2",()=>{tab="riwayat";scrollTo(0,0);render()});
-  on("out",logout);on("rf",refresh);on("export",exportCsv);on("chpw",pwSheet);on("inst",installApp);on("pin",pinSelfSheet);on("period",periodSheet);
+  on("out",logout);on("rf",refresh);on("export",exportCsv);on("chpw",pwSheet);on("bk",backupData);on("rs",restoreSheet);on("inst",installApp);on("pin",pinSelfSheet);on("period",periodSheet);
   on("pdf",()=>printReport(role==="member"?me:showM));
   on("reset",()=>pinSheet(showM));on("delm",()=>delMember(showM));
 }
@@ -377,6 +377,40 @@ function pinSelfSheet(){
   };
   document.getElementById("n").focus();
 }
+function backupData(){
+  const data={app:"nabung-biar-gak-pesugihan",version:1,exportedAt:new Date().toISOString(),members:members.map(m=>({name:m.name,txs:(m.txs||[]).slice().reverse().map(t=>({type:t.type,amount:t.amount,date:t.date,note:t.note||""}))}))};
+  const a=document.createElement("a");a.href=URL.createObjectURL(new Blob([JSON.stringify(data,null,2)],{type:"application/json"}));a.download="cadangan-tabungan-"+today()+".json";document.body.appendChild(a);a.click();a.remove();
+  alert("Cadangan diunduh ("+members.length+" anggota). Simpan file ini di tempat aman: isinya saldo semua anggota.");
+}
+function restoreSheet(){
+  sheet(`<h2>Pulihkan dari cadangan</h2><p class="sub" style="margin-bottom:0">Pilih file cadangan (.json). Anggota yang namanya sudah ada dilewati. Anggota baru mendapat PIN acak baru yang ditampilkan sekali di layar berikutnya.</p>
+  <label for="rfile">File cadangan</label><input id="rfile" type="file" accept=".json,application/json" style="height:auto;padding:12px">
+  <div class="err" id="er"></div><button class="btn" id="ok">Pulihkan</button><button class="btn ghost" id="cx">Batal</button>`);
+  const ok=document.getElementById("ok"),er=document.getElementById("er");
+  ok.onclick=async()=>{
+    const f=document.getElementById("rfile").files[0];er.textContent="";
+    if(!f){er.textContent="Pilih file cadangan dulu.";return}
+    let d;try{d=JSON.parse(await f.text())}catch(e){er.textContent="File tidak valid.";return}
+    if(!d||d.app!=="nabung-biar-gak-pesugihan"||!Array.isArray(d.members)){er.textContent="Ini bukan file cadangan aplikasi ini.";return}
+    const clean=d.members.map(m=>({name:String(m&&m.name||"").trim(),txs:(Array.isArray(m&&m.txs)?m.txs:[]).filter(t=>t&&(t.type==="in"||t.type==="out")&&Number.isInteger(t.amount)&&t.amount>0&&/^\d{4}-\d{2}-\d{2}$/.test(t.date)).map(t=>({type:t.type,amount:t.amount,date:t.date,note:String(t.note||"")}))})).filter(m=>m.name);
+    if(!clean.length){er.textContent="Tidak ada anggota di file ini.";return}
+    const nt=clean.reduce((a,m)=>a+m.txs.length,0);
+    if(!confirm("Pulihkan "+clean.length+" anggota dan "+nt+" transaksi?"))return;
+    ok.disabled=true;
+    try{
+      const r=await rpc("admin_restore",{p_admin:secret,p_data:{members:clean}});
+      if(!r.ok){er.textContent=r.error==="auth"?MSG.auth:"Gagal memulihkan.";ok.disabled=false;return}
+      await load();restoreResult(r);render();
+    }catch(e){er.textContent="Gagal memulihkan. Periksa koneksi, lalu cek daftar anggota sebelum mencoba lagi.";ok.disabled=false}
+  };
+}
+function restoreResult(r){
+  const list=r.created||[],text=list.map(x=>x.name+": "+x.pin).join("\n");
+  sheet(`<h2>Pemulihan selesai</h2><p class="sub" style="margin-bottom:8px">${list.length} anggota dipulihkan${r.skipped?`, ${r.skipped} dilewati karena nama sudah ada`:""}.</p>
+  ${list.length?`<p class="note" style="margin:0 0 8px">Catat PIN baru ini sekarang. PIN lama tidak ikut tersimpan di cadangan, dan daftar ini tidak akan ditampilkan lagi. Anggota bisa menggantinya sendiri di tab Akun.</p><div class="list">${list.map(x=>`<div class="row" style="cursor:default"><div class="grow nm">${esc(x.name)}</div><b style="font-variant-numeric:tabular-nums;letter-spacing:1px">${esc(x.pin)}</b></div>`).join("")}</div><button class="btn" id="cp">Salin daftar PIN</button>`:""}
+  <button class="btn ghost" id="cx">Tutup</button>`);
+  const cp=document.getElementById("cp");if(cp)cp.onclick=async()=>{try{await navigator.clipboard.writeText(text);cp.textContent="Tersalin ✓"}catch(e){cp.textContent="Gagal menyalin, catat manual"}};
+}
 function pwSheet(){
   sheet(`<h2>Ganti password admin</h2><label for="o">Password saat ini</label><input id="o" type="password" autocomplete="current-password">
   <label for="n">Password baru (minimal 8 karakter)</label><input id="n" type="password" autocomplete="new-password">
@@ -408,7 +442,7 @@ function pinSheet(m){
   document.getElementById("pn").focus();
 }
 async function delMember(m){
-  if(!confirm("Hapus "+m.name+" beserta semua riwayatnya? Tindakan ini tidak bisa dibatalkan."))return;
+  if(!confirm("Hapus "+m.name+" beserta semua riwayatnya? Tindakan ini tidak bisa dibatalkan.\n\nDisarankan cadangkan data dulu lewat tab Lainnya."))return;
   try{const r=await rpc("admin_del_member",{p_admin:secret,p_id:m.id});if(r.ok){sel=null;await load();render()}else alert(MSG[r.error]||"Gagal menghapus.")}catch(e){alert("Tidak bisa terhubung. Coba lagi.")}
 }
 function pickMemberSheet(type){
@@ -458,8 +492,11 @@ function txSheet(m,t,preset){
   upd();am.focus();
 }
 async function delTx(id){
+  const m=members.find(x=>x.id===sel),t=m&&(m.txs||[]).find(x=>x.id===id);
+  const noDel="Transaksi ini tidak bisa dihapus karena saldo anggota akan menjadi negatif. Ubah atau hapus penarikan yang terkait lebih dulu.";
+  if(t&&saldo(m)-(t.type==="in"?t.amount:-t.amount)<0){alert(noDel);return}
   if(!confirm("Hapus transaksi ini? Saldo akan dihitung ulang."))return;
-  try{const r=await rpc("admin_del_tx",{p_admin:secret,p_id:id});if(r.ok){await load();render()}else alert(MSG[r.error]||"Gagal menghapus.")}catch(e){alert("Tidak bisa terhubung. Coba lagi.")}
+  try{const r=await rpc("admin_del_tx",{p_admin:secret,p_id:id});if(r.ok){await load();render()}else alert(r.error==="saldo"?noDel:(MSG[r.error]||"Gagal menghapus."))}catch(e){alert("Tidak bisa terhubung. Coba lagi.")}
 }
 function exportCsv(){
   const q=s=>'"'+String(s).replace(/"/g,'""')+'"';
